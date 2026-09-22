@@ -103,6 +103,7 @@ router.post("/", async (req, res) => {
       jobId: randomUUID(),
       submissionId: submission.id,
       artifactId: artifact.id,
+      type: "INGESTION",
     });
 
     const queuedSubmission = await prisma.submission.findUnique({

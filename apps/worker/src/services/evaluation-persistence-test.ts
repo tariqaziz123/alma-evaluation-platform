@@ -28,6 +28,7 @@ const job = await prisma.evaluationJob.create({
     id: randomUUID(),
     submissionId: submission.id,
     rubricId: rubric.id,
+    evaluationKey: `rubric:${rubric.id}`,
     status: "PROCESSING",
   },
 });

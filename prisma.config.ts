@@ -3,10 +3,18 @@ import { defineConfig, env } from "prisma/config";
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
+
   migrations: {
     path: "prisma/migrations",
+    initShadowDb: "CREATE EXTENSION IF NOT EXISTS vector;",
   },
+
+  experimental: {
+    externalTables: true,
+  },
+
   datasource: {
     url: env("DATABASE_URL"),
+    shadowDatabaseUrl: env("SHADOW_DATABASE_URL"),
   },
 });

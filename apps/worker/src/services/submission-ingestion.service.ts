@@ -1,6 +1,9 @@
 import { prisma } from "../lib/prisma.js";
 import { RepositoryExtractor } from "./repository-extractor.service.js";
-import { ProjectAnalyzer } from "./project-analyzer.service.js";
+import {
+  ProjectAnalyzer,
+  type ProjectManifest,
+} from "./project-analyzer.service.js";
 import { EvaluationContextService } from "./evaluation-context.service.js";
 import { ContentChunker } from "./content-chunker.service.js";
 import { VectorStoreService } from "./vector-store.service.js";
@@ -25,7 +28,7 @@ export class SubmissionIngestionService {
     this.embeddingProvider = new MockEmbeddingProvider();
   }
 
-  async process(submissionId: string): Promise<void> {
+  async process(submissionId: string): Promise<ProjectManifest> {
     const submission = await prisma.submission.findUnique({
       where: { id: submissionId },
       include: {
@@ -83,7 +86,9 @@ export class SubmissionIngestionService {
 
     let totalChunks = 0;
 
-    for (const file of context.relevantFiles) {
+    // Index all extracted text files so semantic retrieval
+    // can discover evidence beyond the initially selected files.
+    for (const file of project.files) {
       const chunks = this.chunker.chunk(
         file.path,
         file.content,
@@ -115,5 +120,7 @@ export class SubmissionIngestionService {
     console.log(
       `[Ingestion] Stored ${totalChunks} embedded chunks`,
     );
+
+    return manifest;
   }
 }
