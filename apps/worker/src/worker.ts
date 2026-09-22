@@ -4,156 +4,164 @@ import { prisma } from "./lib/prisma.js";
 import { EvaluationOrchestrator } from "./services/evaluation-orchestrator.service.js";
 
 const queue = new RedisQueue(
-  process.env.REDIS_URL ?? "redis://localhost:6379",
+    process.env.REDIS_URL ?? "redis://localhost:6379",
 );
 
 const orchestrator = new EvaluationOrchestrator();
 
 async function processSubmission(
-  job: SubmissionProcessingJob,
+    job: SubmissionProcessingJob,
 ): Promise<void> {
-  console.log(
-    `[Worker] Processing ${job.type} job: ${job.jobId}`,
-  );
-
-  const submission = await prisma.submission.findUnique({
-    where: {
-      id: job.submissionId,
-    },
-    include: {
-      artifacts: true,
-    },
-  });
-
-  if (!submission) {
-    throw new Error(
-      `Submission not found: ${job.submissionId}`,
+    console.log(
+        `[Worker] Processing ${job.type} job: ${job.jobId}`,
     );
-  }
 
-  try {
-    if (job.type === "INGESTION") {
-      await prisma.submission.update({
+    const submission = await prisma.submission.findUnique({
         where: {
-          id: submission.id,
+            id: job.submissionId,
         },
-        data: {
-          status: "PROCESSING",
+        include: {
+            artifacts: true,
         },
-      });
+    });
 
-      console.log(
-        `[Worker] Ingesting submission ${submission.id}`,
-      );
-
-      await orchestrator.ingestSubmission(
-        submission.id,
-      );
-
-      console.log(
-        `[Worker] Ingestion completed for ${submission.id}`,
-      );
-
-      return;
+    if (!submission) {
+        throw new Error(
+            `Submission not found: ${job.submissionId}`,
+        );
     }
 
-    if (job.type === "EVALUATION") {
-  await prisma.submission.update({
-    where: { id: submission.id },
-    data: { status: "EVALUATING" },
-  });
+    try {
+        if (job.type === "INGESTION") {
+            await prisma.submission.update({
+                where: {
+                    id: submission.id,
+                },
+                data: {
+                    status: "PROCESSING",
+                },
+            });
 
-  console.log(`[Worker] Evaluating submission ${submission.id}`);
+            console.log(
+                `[Worker] Ingesting submission ${submission.id}`,
+            );
 
-  if (!job.evaluationJobId) {
-    throw new Error(
-      `Evaluation job ID is required for evaluation job ${job.jobId}`,
-    );
-  }
+            await orchestrator.ingestSubmission(
+                submission.id,
+            );
 
-  const previousAttempt = await prisma.evaluationAttempt.findFirst({
-    where: {
-      evaluationJobId: job.evaluationJobId,
-    },
-    orderBy: {
-      attemptNumber: "desc",
-    },
-  });
+            console.log(
+                `[Worker] Ingestion completed for ${submission.id}`,
+            );
 
-  const attemptNumber = (previousAttempt?.attemptNumber ?? 0) + 1;
+            return;
+        }
 
-  const attempt = await prisma.evaluationAttempt.create({
-    data: {
-      evaluationJobId: job.evaluationJobId,
-      attemptNumber,
-      status: "RUNNING",
-      workerId: process.env.WORKER_ID ?? "local-worker",
-    },
-  });
+        if (job.type === "EVALUATION") {
+            await prisma.submission.update({
+                where: { id: submission.id },
+                data: { status: "EVALUATING" },
+            });
 
-  try {
-    await orchestrator.evaluate(job.evaluationJobId);
+            console.log(`[Worker] Evaluating submission ${submission.id}`);
 
-    await prisma.evaluationAttempt.update({
-      where: { id: attempt.id },
-      data: {
-        status: "SUCCEEDED",
-        completedAt: new Date(),
-      },
-    });
+            if (!job.evaluationJobId) {
+                throw new Error(
+                    `Evaluation job ID is required for evaluation job ${job.jobId}`,
+                );
+            }
 
-    console.log(
-      `[Worker] Evaluation completed for ${submission.id} (attempt ${attemptNumber})`,
-    );
+            const previousAttempt = await prisma.evaluationAttempt.findFirst({
+                where: {
+                    evaluationJobId: job.evaluationJobId,
+                },
+                orderBy: {
+                    attemptNumber: "desc",
+                },
+            });
 
-    return;
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown evaluation error";
+            const attemptNumber = (previousAttempt?.attemptNumber ?? 0) + 1;
 
-    await prisma.evaluationAttempt.update({
-      where: { id: attempt.id },
-      data: {
-        status: "FAILED",
-        errorCode: "EVALUATION_FAILED",
-        errorMessage,
-        completedAt: new Date(),
-      },
-    });
+            const attempt = await prisma.evaluationAttempt.create({
+                data: {
+                    evaluationJobId: job.evaluationJobId,
+                    attemptNumber,
+                    status: "RUNNING",
+                    workerId: process.env.WORKER_ID ?? "local-worker",
+                },
+            });
 
-    throw error;
-  }
-}
+            try {
+                await orchestrator.evaluate(job.evaluationJobId);
 
-    throw new Error(
-      `Unsupported job type: ${job.type}`,
-    );
-  } catch (error) {
-    console.error(
-      `[Worker] ${job.type} job failed for submission ${submission.id}`,
-      error,
-    );
+                await prisma.evaluationAttempt.update({
+                    where: { id: attempt.id },
+                    data: {
+                        status: "SUCCEEDED",
+                        completedAt: new Date(),
+                    },
+                });
 
-    await prisma.submission.update({
-      where: {
-        id: submission.id,
-      },
-      data: {
-        status: "FAILED",
-      },
-    });
+                console.log(
+                    `[Worker] Evaluation completed for ${submission.id} (attempt ${attemptNumber})`,
+                );
 
-    throw error;
-  }
+                return;
+            } catch (error) {
+                const errorMessage =
+                    error instanceof Error ? error.message : "Unknown evaluation error";
+
+                await prisma.evaluationAttempt.update({
+                    where: { id: attempt.id },
+                    data: {
+                        status: "FAILED",
+                        errorCode: "EVALUATION_FAILED",
+                        errorMessage,
+                        completedAt: new Date(),
+                    },
+                });
+
+                await prisma.evaluationJob.update({
+                    where: { id: job.evaluationJobId },
+                    data: {
+                        status: "FAILED",
+                        completedAt: new Date(),
+                    },
+                });
+
+                throw error;
+            }
+        }
+
+        throw new Error(
+            `Unsupported job type: ${job.type}`,
+        );
+    } catch (error) {
+        console.error(
+            `[Worker] ${job.type} job failed for submission ${submission.id}`,
+            error,
+        );
+
+        await prisma.submission.update({
+            where: {
+                id: submission.id,
+            },
+            data: {
+                status: "FAILED",
+            },
+        });
+
+        throw error;
+    }
 }
 
 async function main(): Promise<void> {
-  console.log("Evaluation worker started");
+    console.log("Evaluation worker started");
 
-  await queue.consume(processSubmission);
+    await queue.consume(processSubmission);
 }
 
 main().catch((error) => {
-  console.error("Worker failed:", error);
-  process.exitCode = 1;
+    console.error("Worker failed:", error);
+    process.exitCode = 1;
 });

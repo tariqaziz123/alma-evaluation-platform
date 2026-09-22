@@ -207,6 +207,114 @@ router.post("/", async (req, res) => {
 });
 
 /**
+ * Retry a failed evaluation.
+ */
+router.post("/:id/retry", async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!isUuid(id)) {
+            return res.status(400).json({
+                error: "Invalid evaluation id",
+            });
+        }
+
+        const job = await prisma.evaluationJob.findUnique({
+            where: { id },
+            include: {
+                submission: {
+                    include: {
+                        artifacts: true,
+                    },
+                },
+            },
+        });
+
+        if (!job) {
+            return res.status(404).json({
+                error: "Evaluation not found",
+            });
+        }
+
+        if (job.status !== "FAILED") {
+            return res.status(409).json({
+                error: "Only failed evaluations can be retried",
+                status: job.status,
+            });
+        }
+
+        const latestAttempt = await prisma.evaluationAttempt.findFirst({
+            where: {
+                evaluationJobId: job.id,
+            },
+            orderBy: {
+                attemptNumber: "desc",
+            },
+        });
+
+        const attemptCount = latestAttempt?.attemptNumber ?? 0;
+        const maxAttempts = 3;
+
+        if (attemptCount >= maxAttempts) {
+            return res.status(409).json({
+                error: "Maximum retry attempts reached",
+                attempts: attemptCount,
+                maxAttempts,
+            });
+        }
+
+        const artifact = job.submission.artifacts[0];
+
+        if (!artifact) {
+            return res.status(400).json({
+                error: "Submission has no artifact",
+            });
+        }
+
+        const updatedJob = await prisma.evaluationJob.update({
+            where: { id: job.id },
+            data: {
+                status: "QUEUED",
+                startedAt: null,
+                completedAt: null,
+            },
+        });
+
+        const queueJob: SubmissionProcessingJob = {
+            jobId: updatedJob.id,
+            submissionId: updatedJob.submissionId,
+            artifactId: artifact.id,
+            type: "EVALUATION",
+            evaluationJobId: updatedJob.id,
+        };
+
+        await queue.publish(queueJob);
+
+        await prisma.submission.update({
+            where: { id: job.submissionId },
+            data: {
+                status: "QUEUED",
+            },
+        });
+
+        return res.status(202).json({
+            id: updatedJob.id,
+            submissionId: updatedJob.submissionId,
+            rubricId: updatedJob.rubricId,
+            status: updatedJob.status,
+            retryAttempt: attemptCount + 1,
+            maxAttempts,
+        });
+    } catch (error) {
+        console.error("[API] Failed to retry evaluation:", error);
+
+        return res.status(500).json({
+            error: "Failed to retry evaluation",
+        });
+    }
+});
+
+/**
  * Get an evaluation job and its final result.
  */
 router.get("/:id", async (req, res) => {
