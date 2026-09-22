@@ -30,3 +30,7 @@ export const ProjectEvaluationSchema = z.object({
 export type ValidatedProjectEvaluation = z.infer<
   typeof ProjectEvaluationSchema
 >;
+
+export type ValidatedCriterionEvaluation = z.infer<
+  typeof CriterionEvaluationSchema
+>;

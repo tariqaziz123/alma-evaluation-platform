@@ -1,16 +1,17 @@
 import { MockLLMProvider } from "./services/llm/mock-llm.provider.js";
 
-async function main() {
-  const provider = new MockLLMProvider();
+const provider = new MockLLMProvider();
 
-  const result = await provider.evaluate(
-    "Evaluate the student's functionality.",
-  );
+const prompt = `
+You are evaluating a student software project.
 
-  console.log(JSON.stringify(result, null, 2));
-}
+RUBRIC CRITERION:
+Architecture
 
-main().catch((error) => {
-  console.error("LLM test failed:", error);
-  process.exitCode = 1;
-});
+CRITERION DESCRIPTION:
+Evaluate the overall architecture of the project.
+`;
+
+const result = await provider.evaluateCriterion(prompt);
+
+console.log(JSON.stringify(result, null, 2));

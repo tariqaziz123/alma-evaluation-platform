@@ -18,5 +18,7 @@ export type ProjectEvaluation = {
 };
 
 export interface LLMProvider {
-  evaluate(prompt: string): Promise<ProjectEvaluation>;
+  evaluateCriterion(
+    prompt: string,
+  ): Promise<CriterionEvaluation>;
 }

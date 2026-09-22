@@ -1,4 +1,4 @@
-import type { ProjectEvaluation } from "../../../../packages/shared/src/evaluation/types.js";
+import type { CriterionEvaluation } from "../../../../packages/shared/src/evaluation/types.js";
 import { MockLLMProvider } from "./llm/mock-llm.provider.js";
 import { EvidencePromptService } from "./evidence-prompt.service.js";
 import { RubricRetrievalService } from "./rubric-retrieval.service.js";
@@ -20,7 +20,7 @@ export class CriterionEvaluationService {
     submissionId: string,
     criterion: RubricCriterion,
     manifest: ProjectManifest,
-  ): Promise<ProjectEvaluation> {
+  ): Promise<CriterionEvaluation> {
     const evidence = await this.retrieval.retrieve(
       submissionId,
       criterion,
@@ -43,6 +43,6 @@ export class CriterionEvaluationService {
 
     // The mock provider ignores the prompt for now.
     // A real provider will receive this exact evidence-aware prompt.
-    return this.llm.evaluate(prompt);
+    return this.llm.evaluateCriterion(prompt);
   }
 }
