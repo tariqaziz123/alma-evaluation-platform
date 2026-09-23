@@ -382,6 +382,28 @@ Complete  Human Review
              v
         Final Result
 ```
+### 4.1.1 Multiple Artifacts
+
+A submission can contain multiple artifacts, for example a GitHub repository plus documentation and a video demonstration.
+
+Each artifact is tracked independently through `SubmissionArtifact` and processed using a source-specific extractor.
+
+For example:
+
+```text
+Submission
+    |
+    +-- GitHub → Repository Extractor
+    |
+    +-- ZIP → Archive Extractor
+    |
+    +-- PDF → Document Extractor
+    |
+    +-- Video → Transcript / Frame Extractor
+    |
+    +-- Live URL → Isolated URL Evaluator
+    |
+    +-- Google Drive → Drive Connector
 
 ### 4.2 Synchronous vs Asynchronous Work
 
@@ -526,6 +548,35 @@ DLQ
 
 This provides a safer retry boundary for production workloads.
 
+### 4.6 Notification
+
+After the evaluation result is persisted, the system emits an evaluation-completed event.
+
+A notification service can consume this event and provide:
+
+- In-app notification to the student
+- Email notification when evaluation is completed
+- Instructor/admin notification when human review is required
+
+Notifications are asynchronous and do not block evaluation completion.
+
+If the evaluation enters `HUMAN_REVIEW`, the system can instead notify the instructor/admin that manual review is required.
+
+The database remains the source of truth for the evaluation status, so notification delivery failure does not change the evaluation result. Failed notifications can be retried independently.
+       ┌─────────────────────┐
+       │ Final Result /      │
+       │ Audit History       │
+       └──────────┬──────────┘
+                  │
+                  ▼
+       ┌─────────────────────┐
+       │ Notification        │
+       │ Service             │
+       │                     │
+       │ In-app / Email      │
+       │ Instructor Alerts   │
+       └─────────────────────┘
+
 ---
 
 ## 5. API Design
@@ -542,7 +593,7 @@ Example request:
 {
   "assignmentId": "uuid",
   "sourceType": "GITHUB",
-  "sourceUrl": "[https://github.com/example/project](https://github.com/example/project)"
+  "sourceUrl": "https://github.com/example/project"
 }
 ```
 
