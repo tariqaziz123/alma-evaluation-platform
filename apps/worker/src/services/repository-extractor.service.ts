@@ -1,6 +1,7 @@
 import { GitHubService } from "./github.service.js";
 import { GitHubContentService } from "./github-content.service.js";
 import { filterRepositoryFiles } from "./file-filter.service.js";
+import type { SubmissionExtractor } from "./submission-extractor.service.js";
 
 export type ExtractedFile = {
   path: string;
@@ -16,10 +17,13 @@ export type ExtractedProject = {
   files: ExtractedFile[];
 };
 
-export class RepositoryExtractor {
+export class RepositoryExtractor implements SubmissionExtractor {
   private readonly github: GitHubService;
   private readonly contentService: GitHubContentService;
 
+  supports(sourceType: string): boolean {
+  return sourceType === "GITHUB";
+}
   constructor(githubToken?: string) {
     this.github = new GitHubService(githubToken);
     this.contentService = new GitHubContentService(githubToken);

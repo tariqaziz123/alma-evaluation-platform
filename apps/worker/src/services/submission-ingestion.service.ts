@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma.js";
 import { RepositoryExtractor } from "./repository-extractor.service.js";
+import type { SubmissionExtractor } from "./submission-extractor.service.js";
 import {
   ProjectAnalyzer,
   type ProjectManifest,
@@ -10,7 +11,7 @@ import { VectorStoreService } from "./vector-store.service.js";
 import { MockEmbeddingProvider } from "./embedding/mock-embedding.provider.js";
 
 export class SubmissionIngestionService {
-  private readonly repositoryExtractor: RepositoryExtractor;
+  private readonly extractors: SubmissionExtractor[];
   private readonly projectAnalyzer: ProjectAnalyzer;
   private readonly evaluationContext: EvaluationContextService;
   private readonly chunker: ContentChunker;
@@ -18,9 +19,10 @@ export class SubmissionIngestionService {
   private readonly embeddingProvider: MockEmbeddingProvider;
 
   constructor() {
-    this.repositoryExtractor = new RepositoryExtractor(
-      process.env.GITHUB_TOKEN,
-    );
+    this.extractors = [
+      new RepositoryExtractor(process.env.GITHUB_TOKEN),
+    ];
+
     this.projectAnalyzer = new ProjectAnalyzer();
     this.evaluationContext = new EvaluationContextService();
     this.chunker = new ContentChunker();
@@ -40,21 +42,35 @@ export class SubmissionIngestionService {
       throw new Error(`Submission not found: ${submissionId}`);
     }
 
-    const artifact = submission.artifacts.find(
-      (item) => item.type === "GITHUB",
+    const artifact = submission.artifacts[0];
+
+    if (!artifact) {
+      throw new Error(
+        `Submission artifact not found: ${submissionId}`,
+      );
+    }
+
+    const extractor = this.extractors.find((item) =>
+      item.supports(artifact.type),
     );
 
-    if (!artifact?.sourceUrl) {
+    if (!extractor) {
       throw new Error(
-        `GitHub source URL not found for submission: ${submissionId}`,
+        `No ingestion extractor configured for source type: ${artifact.type}`,
+      );
+    }
+
+    if (!artifact.sourceUrl) {
+      throw new Error(
+        `Source URL not found for ${artifact.type} submission: ${submissionId}`,
       );
     }
 
     console.log(
-      `[Ingestion] Extracting repository for ${submissionId}`,
+      `[Ingestion] Extracting ${artifact.type} submission ${submissionId}`,
     );
 
-    const project = await this.repositoryExtractor.extract(
+    const project = await extractor.extract(
       artifact.sourceUrl,
     );
 
@@ -62,7 +78,9 @@ export class SubmissionIngestionService {
       `[Ingestion] Extracted ${project.files.length} files`,
     );
 
-    const manifest = this.projectAnalyzer.analyze(project.files);
+    const manifest = this.projectAnalyzer.analyze(
+      project.files,
+    );
 
     console.log(
       `[Ingestion] Project: ${manifest.projectName}`,
