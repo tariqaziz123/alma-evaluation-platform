@@ -5,12 +5,14 @@ import { EvaluationScoringService } from "./evaluation-scoring.service.js";
 import { EvaluationPersistenceService } from "./evaluation-persistence.service.js";
 import type { CriterionEvaluation } from "../../../../packages/shared/src/evaluation/types.js";
 import type { ProjectManifest } from "./project-analyzer.service.js";
+import { HumanReviewService } from "./human-review.service.js";
 
 export class EvaluationOrchestrator {
     private readonly ingestion: SubmissionIngestionService;
     private readonly criterionEvaluation: CriterionEvaluationService;
     private readonly scoring: EvaluationScoringService;
     private readonly persistence: EvaluationPersistenceService;
+    private readonly humanReview = new HumanReviewService();
 
     constructor() {
         this.ingestion = new SubmissionIngestionService();
@@ -231,6 +233,42 @@ export class EvaluationOrchestrator {
                     criteria: evaluations,
                 },
             );
+
+            const requiresHumanReview = evaluations.some((evaluation) => {
+                const confidence = evaluation.confidence ?? 0;
+                const evidenceCount = evaluation.evidence?.length ?? 0;
+
+                return confidence < 0.7 || evidenceCount === 0;
+            });
+
+            if (requiresHumanReview) {
+                await this.humanReview.requestReview(evaluationJobId);
+
+                await prisma.submission.update({
+                    where: {
+                        id: job.submissionId,
+                    },
+                    data: {
+                        status: "QUEUED",
+                    },
+                });
+
+                console.log(
+                    `[Orchestrator] Human review required for evaluation ${evaluationJobId}`,
+                );
+
+                return;
+            }
+
+            await prisma.evaluationJob.update({
+                where: {
+                    id: evaluationJobId,
+                },
+                data: {
+                    status: "COMPLETED",
+                    completedAt: new Date(),
+                },
+            });
 
             await prisma.submission.update({
                 where: {

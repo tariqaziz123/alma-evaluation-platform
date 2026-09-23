@@ -284,7 +284,7 @@ model EvaluationCriterionResult {
 model HumanReview {
   id             String             @id @default(uuid())
   evaluationJobId String             @unique
-  reviewerId     String
+  reviewerId     String?
   status         HumanReviewStatus  @default(REQUESTED)
   comments       String?
   finalScore     Decimal?           @db.Decimal(7, 2)
@@ -292,7 +292,7 @@ model HumanReview {
   completedAt    DateTime?
 
   evaluationJob EvaluationJob @relation(fields: [evaluationJobId], references: [id], onDelete: Cascade)
-  reviewer      User          @relation(fields: [reviewerId], references: [id], onDelete: Restrict)
+  reviewer      User?         @relation(fields: [reviewerId], references: [id], onDelete: Restrict)
 
   @@index([reviewerId])
   @@index([status])
